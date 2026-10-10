@@ -1,18 +1,34 @@
-FROM python:3.12@sha256:63828510c8b5ccce3bf0d6fabd6f3d17d4effa1ffe690f80a67c8e2d394e03ee
+# Use a smaller Python runtime image.
+FROM python:3.12-slim
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc \
-    curl \
-    vim
+# Configure Python for container execution.
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-COPY . .
+# Create a dedicated, unprivileged runtime user.
+RUN groupadd --system appgroup \
+    && useradd --system \
+       --gid appgroup \
+       --home-dir /app \
+       --no-create-home appuser
 
-RUN pip install -r app/requirements.txt
+# Copy dependencies separately to preserve build caching.
+COPY app/requirements.txt /app/requirements.txt
 
+RUN pip install --no-cache-dir \
+    -r /app/requirements.txt
+
+# Copy only the application files.
+COPY --chown=appuser:appgroup app/ /app/app/
+
+# Drop root privileges.
+USER appuser
+
+# Document the application port.
 EXPOSE 8080
 
-# The whole context was copied to /app, so the app package lives in /app/app.
+# Start the application using Gunicorn.
 CMD ["gunicorn", "--chdir", "app", "--bind", "0.0.0.0:8080", "--workers", "2", "app:app"]
